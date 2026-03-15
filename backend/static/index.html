@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Tool CB – BRD Quality Checker</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+    }
+    .container {
+      margin-top: 40px;
+      background: #020617;
+      border-radius: 16px;
+      padding: 24px 28px;
+      width: 900px;
+      box-shadow: 0 24px 60px rgba(15,23,42,0.8);
+      border: 1px solid #1e293b;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 24px;
+      color: #f97316;
+    }
+    p {
+      color: #9ca3af;
+    }
+    .files {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin: 24px 0;
+    }
+    .file-card {
+      background: #020617;
+      border: 1px dashed #334155;
+      border-radius: 12px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .file-card label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e5e7eb;
+    }
+    input[type="file"] {
+      font-size: 12px;
+      color: #9ca3af;
+    }
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    button {
+      background: linear-gradient(135deg, #f97316, #fb923c);
+      color: #0f172a;
+      border: none;
+      border-radius: 999px;
+      padding: 10px 20px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 10px 30px rgba(249,115,22,0.35);
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: default;
+      box-shadow: none;
+    }
+    #downloadBtn {
+      background: linear-gradient(135deg, #22c55e, #4ade80);
+      box-shadow: 0 10px 30px rgba(34,197,94,0.3);
+    }
+    .status {
+      margin-top: 16px;
+      font-size: 13px;
+      color: #a5b4fc;
+    }
+    .summary {
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid #1e293b;
+    }
+    .summary h2 {
+      font-size: 18px;
+      margin-top: 0;
+      color: #f97316;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 12px 0 4px;
+    }
+    .chip {
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid #334155;
+      background: #020617;
+      color: #e5e7eb;
+    }
+    .chip span {
+      font-weight: 600;
+      color: #fbbf24;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 12px;
+    }
+    th, td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #1e293b;
+      text-align: left;
+    }
+    th {
+      color: #9ca3af;
+      font-weight: 500;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    td.type {
+      font-weight: 600;
+      color: #f97316;
+    }
+    td.severity-critical { color: #fecaca; }
+    td.severity-major    { color: #fde68a; }
+    td.severity-minor    { color: #bbf7d0; }
+    .small {
+      font-size: 11px;
+      color: #6b7280;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Tool CB – BRD Quality Checker</h1>
+    <p>Upload your SOW, MoM, and BRD. The tool will auto-evaluate for different data, incomplete data, hallucinations, and depth mismatches using your rule set.</p>
+
+    <div class="files">
+      <div class="file-card">
+        <label for="sow">Input SOW (PDF / DOCX / TXT)</label>
+        <input id="sow" type="file" />
+      </div>
+      <div class="file-card">
+        <label for="mom">Input MoM (optional)</label>
+        <input id="mom" type="file" />
+      </div>
+      <div class="file-card">
+        <label for="brd">Output BRD (PDF / DOCX / TXT)</label>
+        <input id="brd" type="file" />
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button id="runBtn">▶ Run Full Analysis</button>
+      <button id="downloadBtn" disabled>⬇ Download Report</button>
+    </div>
+    <div class="status" id="status"></div>
+
+    <div class="summary" id="summary" style="display:none;">
+      <h2>Analysis Summary</h2>
+      <div id="summaryChips" class="chips"></div>
+      <div class="small" id="summaryTotal"></div>
+      <table id="findingsTable">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Severity</th>
+            <th>Line</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const runBtn        = document.getElementById('runBtn');
+    const downloadBtn   = document.getElementById('downloadBtn');
+    const statusEl      = document.getElementById('status');
+    const summaryEl     = document.getElementById('summary');
+    const chipsEl       = document.getElementById('summaryChips');
+    const totalEl       = document.getElementById('summaryTotal');
+    const findingsTbody = document.querySelector('#findingsTable tbody');
+
+    async function runAnalysis() {
+      const sowFile = document.getElementById('sow').files[0];
+      const momFile = document.getElementById('mom').files[0];
+      const brdFile = document.getElementById('brd').files[0];
+
+      if (!brdFile) {
+        alert('Please select at least the BRD file.');
+        return;
+      }
+
+      runBtn.disabled      = true;
+      downloadBtn.disabled = true;
+      statusEl.textContent = 'Uploading documents and chunking BRD...';
+
+      const formData = new FormData();
+      if (sowFile) formData.append('input_sow', sowFile);
+      if (momFile) formData.append('input_mom', momFile);
+      formData.append('output_brd', brdFile);
+
+      try {
+        const uploadResp = await fetch('/api/upload-documents', {
+          method: 'POST',
+          body: formData
+        });
+        if (!uploadResp.ok) {
+          const err = await uploadResp.json();
+          throw new Error(err.detail || 'Upload failed');
+        }
+        const uploadData = await uploadResp.json();
+
+        const sowId = uploadData.sow.doc_id;
+        const momId = uploadData.mom.doc_id;
+        const brdId = uploadData.brd.doc_id;
+
+        statusEl.textContent = 'Running full analysis (all rule types)...';
+
+        const analysisResp = await fetch('/api/run-full-analysis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sow_doc_id: sowId, mom_doc_id: momId, brd_doc_id: brdId })
+        });
+
+        if (!analysisResp.ok) {
+          const err = await analysisResp.json();
+          throw new Error(err.detail || 'Analysis failed');
+        }
+
+        const analysis = await analysisResp.json();
+        renderSummary(analysis);
+        statusEl.textContent = 'Analysis complete. You can now download the report.';
+        downloadBtn.disabled = false;
+
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = 'Error: ' + err.message;
+      } finally {
+        runBtn.disabled = false;
+      }
+    }
+
+    function downloadReport() {
+      window.location.href = '/api/report/download';
+    }
+
+    function renderSummary(analysis) {
+      summaryEl.style.display = 'block';
+      chipsEl.innerHTML       = '';
+      findingsTbody.innerHTML = '';
+
+      const summary = analysis.summary || {};
+      const total   = analysis.total_findings || 0;
+
+      Object.keys(summary).forEach(type => {
+        const chip = document.createElement('div');
+        chip.className = 'chip';
+        chip.innerHTML = `<span>${type}</span> · ${summary[type]} findings`;
+        chipsEl.appendChild(chip);
+      });
+
+      totalEl.textContent = `Total findings: ${total}`;
+
+      (analysis.findings || []).forEach(f => {
+        const tr = document.createElement('tr');
+        const sevClass = f.severity ? 'severity-' + f.severity.toLowerCase() : '';
+        tr.innerHTML = `
+          <td class="type">${f.error_type}</td>
+          <td class="${sevClass}">${f.severity || ''}</td>
+          <td>${f.line_number ?? ''}</td>
+          <td>${f.description}</td>
+        `;
+        findingsTbody.appendChild(tr);
+      });
+    }
+
+    runBtn.addEventListener('click', runAnalysis);
+    downloadBtn.addEventListener('click', downloadReport);
+  </script>
+</body>
+</html>

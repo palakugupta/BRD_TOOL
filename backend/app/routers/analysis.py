@@ -5,8 +5,10 @@ from pydantic import BaseModel
 from ..database import get_connection
 from pypdf import PdfReader
 import docx
+import io
 
 from ..preprocessing.requirement_blocks import extract_requirement_blocks
+from ..ocr import ocr_many_images
 
 from ..models import (
     insert_document,
@@ -17,6 +19,7 @@ from ..models import (
     create_analysis_run,
     finalize_analysis_run,
 )
+from ..llm_project_model import build_project_model
 
 from ..detectors import (
     different_data,
@@ -32,6 +35,7 @@ from ..detectors import (
     role_responsibility_violation,
     organization_mismatch,
     process_dependency_validator,
+    llm_business_context,
 )
 
 router = APIRouter(prefix="/api", tags=["analysis"])
@@ -43,8 +47,30 @@ router = APIRouter(prefix="/api", tags=["analysis"])
 
 def extract_text_from_pdf(file: UploadFile) -> str:
     try:
+        file.file.seek(0)
         reader = PdfReader(file.file)
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
+        text = "\n".join(page.extract_text() or "" for page in reader.pages).strip()
+
+        # Optional: OCR embedded images (tables/screenshots often render as images in PDFs).
+        image_blobs = []
+        try:
+            for page in reader.pages:
+                # pypdf exposes extracted images via page.images in newer versions
+                imgs = getattr(page, "images", None)
+                if not imgs:
+                    continue
+                for img in imgs:
+                    data = getattr(img, "data", None)
+                    if isinstance(data, (bytes, bytearray)) and data:
+                        image_blobs.append(bytes(data))
+        except Exception:
+            image_blobs = []
+
+        ocr_text = ocr_many_images(image_blobs, limit=20)
+
+        if ocr_text:
+            return (text + "\n\n[OCR]\n" + ocr_text).strip()
+        return text
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -54,6 +80,7 @@ def extract_text_from_pdf(file: UploadFile) -> str:
 
 def extract_text_from_docx(file: UploadFile) -> str:
     try:
+        file.file.seek(0)
         document = docx.Document(file.file)
         lines = [p.text for p in document.paragraphs]
         for table in document.tables:
@@ -61,7 +88,25 @@ def extract_text_from_docx(file: UploadFile) -> str:
                 lines.append(
                     " | ".join(c.text.replace("\n", " ").strip() for c in row.cells)
                 )
-        return "\n".join(lines)
+
+        # Optional: OCR embedded images inside the DOCX (screenshots, scanned tables).
+        image_blobs = []
+        try:
+            # python-docx doesn't expose raw bytes directly; read via related parts
+            for rel in document.part.rels.values():
+                if "image" in rel.reltype:
+                    part = rel.target_part
+                    blob = getattr(part, "blob", None)
+                    if isinstance(blob, (bytes, bytearray)) and blob:
+                        image_blobs.append(bytes(blob))
+        except Exception:
+            image_blobs = []
+
+        ocr_text = ocr_many_images(image_blobs, limit=20)
+        base = "\n".join(lines).strip()
+        if ocr_text:
+            return (base + "\n\n[OCR]\n" + ocr_text).strip()
+        return base
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -260,6 +305,7 @@ async def run_full_analysis(payload: AnalysisRequest):
     run_id = create_analysis_run(
         sow_doc_id=payload.sow_doc_id,
         mom_doc_id=payload.mom_doc_id,
+        brd_doc_id=payload.brd_doc_id,
     )
 
     print("Running document-level detectors...")
@@ -348,6 +394,24 @@ async def run_full_analysis(payload: AnalysisRequest):
             role_responsibility_violation.detect(block_text, chunks)
         except Exception as e:
             print("role_responsibility_violation error:", e)
+
+    # Optional: LLM-based business-context checks
+    project_model = None
+    try:
+        project_model = build_project_model(sow_text=sow_text, mom_text=mom_text)
+    except Exception as e:
+        print("llm_project_model error:", e)
+
+    try:
+        llm_business_context.detect(
+            sow_text=sow_text,
+            mom_text=mom_text,
+            brd_text=brd_text,
+            chunks=chunks,
+            project_model=project_model,
+        )
+    except Exception as e:
+        print("llm_business_context error:", e)
 
     summary = _build_summary(payload.brd_doc_id)
 

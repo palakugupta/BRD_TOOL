@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import Response
 from pathlib import Path
 from datetime import datetime
+from app.export_docx import generate_docx_report
 
 from .database import init_db
 from .models import seed_default_rules

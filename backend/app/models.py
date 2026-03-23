@@ -238,6 +238,28 @@ def get_findings_for_brd(doc_id: int) -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def get_findings_for_doc(doc_id: int) -> List[Dict[str, Any]]:
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        SELECT f.*
+        FROM findings f
+        JOIN chunks c ON f.chunk_id = c.chunk_id
+        WHERE c.doc_id = ?
+        ORDER BY f.line_number
+        """,
+        (doc_id,),
+    )
+
+    rows = cur.fetchall()
+    conn.close()
+
+    return [dict(r) for r in rows]
+
+
 # ─────────────────────────────────────────────
 # ANALYSIS RUN TRACKING
 # ─────────────────────────────────────────────
@@ -245,6 +267,7 @@ def get_findings_for_brd(doc_id: int) -> List[Dict[str, Any]]:
 def create_analysis_run(
     sow_doc_id: Optional[int],
     mom_doc_id: Optional[int],
+    brd_doc_id: Optional[int],
 ) -> int:
 
     conn = get_connection()
@@ -255,16 +278,18 @@ def create_analysis_run(
         INSERT INTO analysis_runs (
             sow_doc_id,
             mom_doc_id,
+            brd_doc_id,
             start_timestamp,
             end_timestamp,
             total_findings,
             coverage_score
         )
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             sow_doc_id,
             mom_doc_id,
+            brd_doc_id,
             datetime.utcnow().isoformat(),
             None,
             0,

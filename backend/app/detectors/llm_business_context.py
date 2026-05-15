@@ -5,6 +5,7 @@ LLM-backed detector that reviews the BRD against SOW/MoM using business context.
 This detector is optional: if no LLM is configured it will safely no-op.
 """
 
+import json
 from typing import List, Dict, Any, Optional
 
 from ..models import insert_finding
@@ -29,15 +30,20 @@ def detect(
     mom_text: str,
     brd_text: str,
     chunks: List[Dict[str, Any]],
+    project_model: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
     Run LLM-based business-context checks and store additional findings.
 
     The goal is to capture higher-level risks (scope drift, KPI/SLA mismatches,
     process inconsistencies, domain misuse) that are difficult to encode as
-    static rules.
+    static rules. If a project_model is provided, a compact JSON summary of
+    SOW/MoM is prepended to the SOW text so the LLM has explicit grounding.
     """
-    print(f"[llm_business_context] START — sow_len={len(sow_text)} mom_len={len(mom_text)} brd_len={len(brd_text)} chunks={len(chunks)}")
+    print(
+        f"[llm_business_context] START — sow_len={len(sow_text)} "
+        f"mom_len={len(mom_text)} brd_len={len(brd_text)} chunks={len(chunks)}"
+    )
 
     configured = is_llm_configured()
     print(f"[llm_business_context] is_llm_configured = {configured}")
@@ -50,13 +56,30 @@ def detect(
         print("[llm_business_context] END (empty BRD)")
         return
 
+    sow_for_llm = sow_text or ""
+    mom_for_llm = mom_text or ""
+
+    if project_model:
+        try:
+            model_json = json.dumps(project_model, ensure_ascii=False)
+        except Exception as e:
+            print(f"[llm_business_context] project_model serialize failed: {e}")
+            model_json = "{}"
+
+        prefix = (
+            "PROJECT MODEL (derived from SOW/MoM, JSON):\n"
+            f"{model_json}\n\n"
+            "The following SOW and MoM texts are the raw sources that this model was built from.\n\n"
+        )
+        sow_for_llm = prefix + sow_for_llm
+
     print("[llm_business_context] calling analyze_business_context()...")
     try:
         issues = analyze_business_context(
-            sow_text=sow_text or "",
-            mom_text=mom_text or "",
+            sow_text=sow_for_llm,
+            mom_text=mom_for_llm,
             brd_text=brd_text or "",
-            max_issues=12,
+            max_issues=16,
         )
     except LLMUnavailable as e:
         print("LLM unavailable:", e)
@@ -111,4 +134,3 @@ def detect(
         )
 
     print("[llm_business_context] END")
-

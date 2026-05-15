@@ -9,9 +9,10 @@ A tool that audits a **Business Requirements Document (BRD)** against its source
 Upload three documents (SOW + optional MoM + the BRD being reviewed). The tool runs a battery of rule-based, semantic, and LLM-backed detectors and returns a list of findings with line numbers, severity, and source citations.
 
 - **14 detectors** spanning numeric contradictions, scope coverage, terminology drift, process gaps, role/responsibility issues, platform constraints, and more.
-- **Optional LLM layer** (Groq) for higher-order business-context risks that rules can't catch.
+- **Optional LLM layer** (Groq) for higher-order business-context risks that rules can't catch, optionally grounded by a structured project model derived from SOW/MoM.
+- **OCR fallback** for embedded images in PDF/DOCX (tables, screenshots) so scanned content still gets analyzed.
 - **Line-anchored findings** so you can jump from a finding straight to the offending line in a built-in document preview.
-- **DOCX report export** for sharing with stakeholders.
+- **DOCX + Excel report export** for sharing with stakeholders.
 
 ---
 
@@ -32,7 +33,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-> `requirements.txt` is currently a `pip freeze` from a conda env and may include extra packages. The minimum runtime deps are: `fastapi`, `uvicorn`, `python-dotenv`, `python-docx`, `pypdf`, `sentence-transformers`, `torch`, `groq`.
+> `requirements.txt` is currently a `pip freeze` from a conda env and may include extra packages. The minimum runtime deps are: `fastapi`, `uvicorn`, `python-dotenv`, `python-docx`, `pypdf`, `sentence-transformers`, `torch`, `groq`, `openpyxl` (for Excel export), `pillow` + `pytesseract` (for OCR).
 
 ### Configure
 
@@ -88,6 +89,7 @@ The web UI uses these endpoints. They're also fine to drive directly.
 | `POST` | `/api/run-full-analysis` | Run every detector against the BRD; returns findings + coverage score. |
 | `GET`  | `/api/document-preview/{doc_id}` | Line-numbered text of a document with findings overlaid. |
 | `GET`  | `/api/report/download` | DOCX report of the latest analysis. |
+| `GET`  | `/api/report/excel` | Excel (XLSX) report of the latest analysis. |
 | `GET`  | `/health` | Liveness probe. |
 
 ---
@@ -110,8 +112,11 @@ BRD_TOOL/
 │   │   ├── database.py                # SQLite schema + connection helper
 │   │   ├── models.py                  # documents / chunks / findings / rules / runs
 │   │   ├── semantic.py                # SBERT embeddings (all-MiniLM-L6-v2)
+│   │   ├── ocr.py                     # Tesseract-backed OCR for embedded images
 │   │   ├── llm_client.py              # Groq client + business-context prompt
+│   │   ├── llm_project_model.py       # Builds a structured project model from SOW/MoM
 │   │   ├── export_docx.py             # DOCX report generator
+│   │   ├── export_excel.py            # XLSX report generator
 │   │   ├── detectors/                 # 14 detectors (see table above)
 │   │   ├── routers/
 │   │   │   └── analysis.py            # Upload + run-analysis endpoints
@@ -151,6 +156,6 @@ If neither `GROQ_API_KEY`, `FREE_LLM_API_KEY`, nor `OPENAI_API_KEY` is set, `is_
 
 ## Notes
 
-- The LLM detector caps SOW/MoM/BRD prompt text at ~20k/20k/24k characters; longer documents are truncated before being sent to Groq.
+- The LLM detector caps SOW/MoM/BRD prompt text at ~20k/20k/24k characters; longer documents are truncated before being sent to Groq. When a project model is built, a compact JSON summary of SOW/MoM is prepended so the LLM has explicit grounding.
 - Embeddings are optional at the dependency level: if `torch` / `sentence-transformers` aren't installed, semantic detectors return cleanly without crashing.
 - All detector output flows through `insert_finding`, which deduplicates aggressively to keep reports concise.

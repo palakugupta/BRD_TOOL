@@ -19,6 +19,8 @@ from .database import init_db
 from .models import seed_default_rules
 from .routers import analysis
 from .export_docx import generate_docx_report
+from .export_excel import generate_excel_report
+
 
 app = FastAPI(title="Tool CB - BRD Quality Tool")
 
@@ -47,13 +49,12 @@ app.include_router(analysis.router)
 
 
 # ─────────────────────────────────────────────
-# Download Excel report
+# Download DOCX report
 # ─────────────────────────────────────────────
 
 @app.get("/api/report/download")
 def download_report():
 
-    # Use same database path as backend
     BASE_DIR = Path(__file__).resolve().parent.parent
     db_path = BASE_DIR / "tool_cb.db"
 
@@ -66,6 +67,31 @@ def download_report():
     return Response(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{fname}"'
+        },
+    )
+
+
+# ─────────────────────────────────────────────
+# Download Excel report
+# ─────────────────────────────────────────────
+
+@app.get("/api/report/excel")
+def download_excel_report():
+
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    db_path = BASE_DIR / "tool_cb.db"
+
+    print("Excel generator using DB:", db_path)
+
+    data = generate_excel_report(str(db_path))
+
+    fname = f"BRD_Analysis_Report_{datetime.now():%Y-%m-%d}.xlsx"
+
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": f'attachment; filename="{fname}"'
         },

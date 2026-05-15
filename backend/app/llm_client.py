@@ -8,8 +8,6 @@ class LLMUnavailable(Exception):
 
 
 def _get_api_key() -> Optional[str]:
-    # Prefer Groq; fall back to generic "free" keys if you want to wire in
-    # another provider later.
     return (
         os.getenv("GROQ_API_KEY")
         or os.getenv("FREE_LLM_API_KEY")
@@ -19,9 +17,7 @@ def _get_api_key() -> Optional[str]:
 
 
 def is_llm_configured() -> bool:
-    """
-    Returns True if an API key is available for LLM calls.
-    """
+    """Returns True if an API key is available for LLM calls."""
     return _get_api_key() is not None
 
 
@@ -42,12 +38,17 @@ def analyze_business_context(
       - source_reference
     """
     api_key = _get_api_key()
-    print(f"[llm_client] analyze_business_context called, key_present={api_key is not None}, key_length={len(api_key) if api_key else 0}")
+    print(
+        f"[llm_client] analyze_business_context called, "
+        f"key_present={api_key is not None}, "
+        f"key_length={len(api_key) if api_key else 0}"
+    )
     if not api_key:
-        raise LLMUnavailable("No LLM API key configured (expected GROQ_API_KEY or FREE_LLM_API_KEY)")
+        raise LLMUnavailable(
+            "No LLM API key configured (expected GROQ_API_KEY or FREE_LLM_API_KEY)"
+        )
 
     try:
-        # Groq has a generous free tier and is typically cheaper than OpenAI.
         from groq import Groq  # type: ignore
     except Exception as exc:  # pragma: no cover
         raise LLMUnavailable(f"groq package not available: {exc}") from exc
@@ -80,19 +81,19 @@ def analyze_business_context(
         "Return a JSON array of objects with this exact shape:\n"
         "[\n"
         "  {\n"
-        '    \"line_number\": <integer or null>,\n'
-        '    \"severity\": \"critical\" | \"major\" | \"minor\",\n'
-        '    \"error_type\": \"business_context_mismatch\" | \"scope_risk\" | \"process_risk\" | \"kpi_sla_risk\" | \"domain_misuse\",\n'
-        '    \"description\": \"Short, human-readable description of the issue in the BRD line.\",\n'
-        '    \"source_reference\": \"Explain which part of SOW/MoM this conflicts with or why it is risky. Keep it under 3 sentences.\"\n'
+        '    "line_number": <integer or null>,\n'
+        '    "severity": "critical" | "major" | "minor",\n'
+        '    "error_type": "business_context_mismatch" | "scope_risk" | "process_risk" | "kpi_sla_risk" | "domain_misuse",\n'
+        '    "description": "Short, human-readable description of the issue in the BRD line.",\n'
+        '    "source_reference": "Explain which part of SOW/MoM this conflicts with or why it is risky. Keep it under 3 sentences."\n'
         "  }\n"
         "]\n\n"
         "SOW:\n"
-        f"\"\"\"{sow_text[:20000]}\"\"\"\n\n"
+        f'"""{sow_text[:20000]}"""\n\n'
         "MoM:\n"
-        f"\"\"\"{mom_text[:20000]}\"\"\"\n\n"
+        f'"""{mom_text[:20000]}"""\n\n'
         "BRD:\n"
-        f"\"\"\"{brd_text[:24000]}\"\"\"\n\n"
+        f'"""{brd_text[:24000]}"""\n\n'
         f"Limit yourself to at most {max_issues} high-priority issues.\n\n"
         "Return ONLY the JSON array, no explanation, no markdown."
     )
@@ -132,7 +133,7 @@ def analyze_business_context(
             continue
         issues.append(
             {
-                "line_number": item.get("line_number"),  # may be None
+                "line_number": item.get("line_number"),
                 "severity": item.get("severity", "major"),
                 "error_type": item.get("error_type", "business_context_mismatch"),
                 "description": item.get("description", ""),
@@ -141,4 +142,3 @@ def analyze_business_context(
         )
 
     return issues
-

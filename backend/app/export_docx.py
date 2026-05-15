@@ -31,8 +31,6 @@ def _get_latest_brd(conn: sqlite3.Connection):
     ).fetchone()
     if not row:
         return None
-    keys = [c[0] for c in conn.execute("PRAGMA table_info(documents)")]
-    # row is tuple, map minimal fields manually for safety
     return {
         "doc_id": row[0],
         "filename": row[1],

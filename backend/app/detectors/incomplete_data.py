@@ -203,6 +203,8 @@ def detect(
 
     topic_embs = embed_sentences(topics)
     brd_embs   = embed_sentences(brd_sentences)
+    if topic_embs is None or brd_embs is None:
+        return
 
     reported = 0
     for i, topic in enumerate(topics):

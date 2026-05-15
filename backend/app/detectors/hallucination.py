@@ -309,6 +309,9 @@ def detect(
         return
 
     source_embs = embed_sentences(source_sentences)
+    if source_embs is None:
+        # Semantic model not available; still keep pattern-based hallucination checks above.
+        return
     lines       = brd_text.splitlines()
     brd_lines   = [l.strip() for l in lines if len(l.strip()) > 40]
 
@@ -316,6 +319,8 @@ def detect(
         return
 
     brd_embs       = embed_sentences(brd_lines)
+    if brd_embs is None:
+        return
     hallucinations = []
     seen_lines     = set()
 

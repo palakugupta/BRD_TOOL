@@ -43,7 +43,7 @@ def insert_document(doc_type: str, filename: str, full_text: str) -> Tuple[int, 
 # CHUNKS
 # ─────────────────────────────────────────────
 
-def create_brd_chunks(doc_id: int, full_text: str, chunk_size: int = 50) -> int:
+def create_brd_chunks(doc_id: int, full_text: str, chunk_chars: int = 500) -> int:
 
     lines = full_text.splitlines()
     total_lines = len(lines)
@@ -55,15 +55,18 @@ def create_brd_chunks(doc_id: int, full_text: str, chunk_size: int = 50) -> int:
     cur = conn.cursor()
 
     chunk_count = 0
-    start = 0
+    i = 0
 
-    while start < total_lines:
-
-        end = min(start + chunk_size, total_lines)
-        chunk_lines = lines[start:end]
-        start_line = start + 1
-        end_line = end
-        chunk_text = "\n".join(chunk_lines)
+    while i < total_lines:
+        start_line = i + 1
+        buf: List[str] = []
+        size = 0
+        while i < total_lines and (size == 0 or size + len(lines[i]) + 1 <= chunk_chars):
+            buf.append(lines[i])
+            size += len(lines[i]) + 1
+            i += 1
+        end_line = i
+        chunk_text = "\n".join(buf)
 
         cur.execute(
             """
@@ -74,7 +77,6 @@ def create_brd_chunks(doc_id: int, full_text: str, chunk_size: int = 50) -> int:
         )
 
         chunk_count += 1
-        start = end
 
     conn.commit()
     conn.close()
@@ -238,6 +240,28 @@ def get_findings_for_brd(doc_id: int) -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def get_findings_for_doc(doc_id: int) -> List[Dict[str, Any]]:
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        SELECT f.*
+        FROM findings f
+        JOIN chunks c ON f.chunk_id = c.chunk_id
+        WHERE c.doc_id = ?
+        ORDER BY f.line_number
+        """,
+        (doc_id,),
+    )
+
+    rows = cur.fetchall()
+    conn.close()
+
+    return [dict(r) for r in rows]
+
+
 # ─────────────────────────────────────────────
 # ANALYSIS RUN TRACKING
 # ─────────────────────────────────────────────
@@ -245,6 +269,7 @@ def get_findings_for_brd(doc_id: int) -> List[Dict[str, Any]]:
 def create_analysis_run(
     sow_doc_id: Optional[int],
     mom_doc_id: Optional[int],
+    brd_doc_id: Optional[int],
 ) -> int:
 
     conn = get_connection()
@@ -255,16 +280,18 @@ def create_analysis_run(
         INSERT INTO analysis_runs (
             sow_doc_id,
             mom_doc_id,
+            brd_doc_id,
             start_timestamp,
             end_timestamp,
             total_findings,
             coverage_score
         )
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             sow_doc_id,
             mom_doc_id,
+            brd_doc_id,
             datetime.utcnow().isoformat(),
             None,
             0,

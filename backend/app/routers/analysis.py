@@ -14,6 +14,7 @@ from ..models import (
     get_document,
     get_chunks_for_brd,
     get_findings_for_brd,
+    get_findings_for_doc,
     create_analysis_run,
     finalize_analysis_run,
 )
@@ -32,6 +33,7 @@ from ..detectors import (
     role_responsibility_violation,
     organization_mismatch,
     process_dependency_validator,
+    llm_business_context,
 )
 
 router = APIRouter(prefix="/api", tags=["analysis"])
@@ -121,7 +123,7 @@ async def upload_documents(
     brd_doc_id, brd_line_count = insert_document(
         "output_brd", output_brd.filename, brd_text
     )
-    chunks_created = create_brd_chunks(brd_doc_id, brd_text, chunk_size=120)
+    chunks_created = create_brd_chunks(brd_doc_id, brd_text, chunk_chars=120)
 
     print("UPLOAD COMPLETE")
     print("SOW lines:", sow_line_count)
@@ -260,6 +262,7 @@ async def run_full_analysis(payload: AnalysisRequest):
     run_id = create_analysis_run(
         sow_doc_id=payload.sow_doc_id,
         mom_doc_id=payload.mom_doc_id,
+        brd_doc_id=payload.brd_doc_id,
     )
 
     print("Running document-level detectors...")
@@ -349,6 +352,28 @@ async def run_full_analysis(payload: AnalysisRequest):
         except Exception as e:
             print("role_responsibility_violation error:", e)
 
+    # ── Optional: LLM-powered business-context checks ────────────────
+    if chunks:
+        first = chunks[0]
+        print(f"[analysis] First chunk keys: {list(first.keys())}")
+        print(
+            f"[analysis] First chunk: chunk_id={first.get('chunk_id')} "
+            f"start_line={first.get('start_line')} end_line={first.get('end_line')} "
+            f"text_len={len(first.get('chunk_text') or '')}"
+        )
+    else:
+        print("[analysis] WARNING: chunks empty right before LLM detector")
+
+    try:
+        llm_business_context.detect(
+            sow_text=sow_text,
+            mom_text=mom_text,
+            brd_text=brd_text,
+            chunks=chunks,
+        )
+    except Exception as e:
+        print("llm_business_context error:", e)
+
     summary = _build_summary(payload.brd_doc_id)
 
     finalize_analysis_run(
@@ -358,3 +383,36 @@ async def run_full_analysis(payload: AnalysisRequest):
     )
 
     return summary
+
+
+# ─────────────────────────────────────────────
+# DOCUMENT PREVIEW (read-only)
+# ─────────────────────────────────────────────
+
+@router.get("/document-preview/{doc_id}")
+def document_preview(doc_id: int):
+    doc = get_document(doc_id)
+    if not doc:
+        raise HTTPException(404, "Document not found")
+
+    full_text = doc.get("full_text") or ""
+    lines = full_text.splitlines()
+
+    findings = get_findings_for_doc(doc_id)
+    findings_by_line: Dict[str, list] = {}
+    for f in findings:
+        ln = f.get("line_number")
+        if not ln:
+            continue
+        key = str(int(ln))
+        findings_by_line.setdefault(key, []).append(f)
+
+    return {
+        "doc_id": doc_id,
+        "doc_type": doc.get("doc_type"),
+        "filename": doc.get("filename"),
+        "line_count": len(lines),
+        "lines": [{"n": i + 1, "t": t} for i, t in enumerate(lines)],
+        "findings": findings,
+        "findings_by_line": findings_by_line,
+    }

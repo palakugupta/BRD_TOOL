@@ -1,19 +1,11 @@
-# Python
+.venv/
 __pycache__/
 *.pyc
-*.pyo
-.venv/
-*.egg-info/
 
-# Database files
-*.db
-
-# Environment
+# Secrets
 .env
-.env.*
+**/.env
 
-# OS
+# macOS
 .DS_Store
-
-# VSCode
-.vscode/
+**/.DS_Store

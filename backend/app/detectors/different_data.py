@@ -191,6 +191,8 @@ def detect(
 
     fact_texts = [f["text"] for f in facts]
     fact_embs  = embed_sentences(fact_texts)
+    if fact_embs is None:
+        return
 
     brd_items = _extract_brd_numeric_sentences(brd_text)
     if not brd_items:
@@ -198,6 +200,8 @@ def detect(
 
     brd_sentences_list = [item[1] for item in brd_items]
     brd_embs           = embed_sentences(brd_sentences_list)
+    if brd_embs is None:
+        return
 
     def find_chunk_id(line_no: int) -> Optional[int]:
         for ch in chunks:

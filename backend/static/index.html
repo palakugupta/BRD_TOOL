@@ -147,12 +147,149 @@
       font-size: 11px;
       color: #6b7280;
     }
+
+    .preview {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid #1e293b;
+      display: none;
+    }
+    .preview h2 {
+      font-size: 18px;
+      margin-top: 0;
+      color: #f97316;
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+    .preview .meta {
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .split {
+      display: grid;
+      grid-template-columns: 1.6fr 1fr;
+      gap: 14px;
+      margin-top: 10px;
+    }
+    .pane {
+      border: 1px solid #1e293b;
+      background: #0b1223;
+      border-radius: 12px;
+      overflow: hidden;
+      min-height: 420px;
+      display: flex;
+      flex-direction: column;
+    }
+    .pane-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid #1e293b;
+      color: #cbd5e1;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .pane-header .hint {
+      color: #94a3b8;
+      font-weight: 400;
+    }
+    .doc {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1.55;
+      overflow: auto;
+      padding: 10px 0;
+      flex: 1;
+      background: #0a1020;
+    }
+    .line {
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      gap: 10px;
+      padding: 2px 12px;
+      cursor: default;
+    }
+    .line:hover {
+      background: rgba(148, 163, 184, 0.08);
+    }
+    .ln {
+      color: #64748b;
+      text-align: right;
+      user-select: none;
+    }
+    .txt {
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #e5e7eb;
+    }
+    .line.flagged {
+      background: rgba(249, 115, 22, 0.12);
+      border-left: 3px solid rgba(249, 115, 22, 0.95);
+    }
+    .line.active {
+      outline: 2px solid rgba(99, 102, 241, 0.75);
+      outline-offset: -2px;
+      background: rgba(99, 102, 241, 0.12);
+    }
+    .comments {
+      overflow: auto;
+      padding: 10px;
+      flex: 1;
+      background: #0a1020;
+    }
+    .comment {
+      border: 1px solid #1e293b;
+      background: #0b1223;
+      border-radius: 10px;
+      padding: 10px 10px;
+      margin-bottom: 10px;
+    }
+    .comment .top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+    .comment .pill {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid #334155;
+      color: #e5e7eb;
+      background: #0b1223;
+      white-space: nowrap;
+    }
+    .comment .pill strong { color: #f97316; }
+    .comment .sev-critical { color: #fecaca; }
+    .comment .sev-major    { color: #fde68a; }
+    .comment .sev-minor    { color: #bbf7d0; }
+    .comment .body {
+      color: #e5e7eb;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .comment .src {
+      margin-top: 6px;
+      color: #94a3b8;
+      font-size: 11px;
+    }
+    .comment button {
+      background: transparent;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+      box-shadow: none;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Tool CB – BRD Quality Checker</h1>
-    <p>Upload your SOW, MoM, and BRD. The tool will auto-evaluate for different data, incomplete data, hallucinations, and depth mismatches using your rule set.</p>
+    <p>Upload your SOW, MoM, and BRD. The tool will auto-evaluate for different data, incomplete data, hallucinations, depth mismatches, and (optionally) LLM-powered business-context risks using your rule set.</p>
 
     <div class="files">
       <div class="file-card">
@@ -191,6 +328,29 @@
         <tbody></tbody>
       </table>
     </div>
+
+    <div class="preview" id="preview">
+      <h2>
+        Document Preview
+        <span class="meta" id="previewMeta"></span>
+      </h2>
+      <div class="split">
+        <div class="pane">
+          <div class="pane-header">
+            <div><strong>BRD</strong> <span class="hint">Read-only · click a highlighted line</span></div>
+            <div class="hint" id="previewStats"></div>
+          </div>
+          <div class="doc" id="docPane"></div>
+        </div>
+        <div class="pane">
+          <div class="pane-header">
+            <div><strong>Comments</strong> <span class="hint">for selected line</span></div>
+            <div class="hint" id="commentStats"></div>
+          </div>
+          <div class="comments" id="commentsPane"></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -201,6 +361,16 @@
     const chipsEl       = document.getElementById('summaryChips');
     const totalEl       = document.getElementById('summaryTotal');
     const findingsTbody = document.querySelector('#findingsTable tbody');
+    const previewEl     = document.getElementById('preview');
+    const previewMetaEl = document.getElementById('previewMeta');
+    const previewStatsEl = document.getElementById('previewStats');
+    const commentStatsEl = document.getElementById('commentStats');
+    const docPane       = document.getElementById('docPane');
+    const commentsPane  = document.getElementById('commentsPane');
+
+    let lastBrdId = null;
+    let previewData = null;
+    let activeLine = null;
 
     async function runAnalysis() {
       const sowFile = document.getElementById('sow').files[0];
@@ -251,6 +421,8 @@
 
         const analysis = await analysisResp.json();
         renderSummary(analysis);
+        lastBrdId = brdId;
+        await loadPreview(brdId);
         statusEl.textContent = 'Analysis complete. You can now download the report.';
         downloadBtn.disabled = false;
 
@@ -270,6 +442,7 @@
       summaryEl.style.display = 'block';
       chipsEl.innerHTML       = '';
       findingsTbody.innerHTML = '';
+      previewEl.style.display = 'none';
 
       const summary = analysis.summary || {};
       const total   = analysis.total_findings || 0;
@@ -286,14 +459,165 @@
       (analysis.findings || []).forEach(f => {
         const tr = document.createElement('tr');
         const sevClass = f.severity ? 'severity-' + f.severity.toLowerCase() : '';
+        const ln = (f.line_number ?? '');
         tr.innerHTML = `
           <td class="type">${f.error_type}</td>
           <td class="${sevClass}">${f.severity || ''}</td>
-          <td>${f.line_number ?? ''}</td>
+          <td>${ln}</td>
           <td>${f.description}</td>
         `;
+        if (ln) {
+          tr.style.cursor = 'pointer';
+          tr.addEventListener('click', () => {
+            if (!lastBrdId) return;
+            ensurePreviewVisible();
+            focusLine(Number(ln));
+          });
+        }
         findingsTbody.appendChild(tr);
       });
+    }
+
+    async function loadPreview(docId) {
+      try {
+        statusEl.textContent = 'Loading document preview...';
+        const resp = await fetch(`/api/document-preview/${docId}`);
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || 'Failed to load preview');
+        }
+        previewData = await resp.json();
+        renderPreview(previewData);
+        statusEl.textContent = 'Preview ready. Click highlighted lines to see comments.';
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = 'Preview error: ' + e.message;
+      }
+    }
+
+    function ensurePreviewVisible() {
+      previewEl.style.display = 'block';
+      previewEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function renderPreview(data) {
+      ensurePreviewVisible();
+
+      const file = data.filename ? `· ${data.filename}` : '';
+      previewMetaEl.textContent = file;
+      previewStatsEl.textContent = `${data.line_count || 0} lines`;
+
+      const byLine = data.findings_by_line || {};
+      const flaggedLines = new Set(Object.keys(byLine).map(k => Number(k)));
+      const totalFindings = (data.findings || []).length;
+
+      docPane.innerHTML = '';
+      const frag = document.createDocumentFragment();
+      (data.lines || []).forEach(({ n, t }) => {
+        const row = document.createElement('div');
+        row.className = 'line' + (flaggedLines.has(n) ? ' flagged' : '');
+        row.dataset.line = String(n);
+
+        const ln = document.createElement('div');
+        ln.className = 'ln';
+        ln.textContent = String(n);
+
+        const txt = document.createElement('div');
+        txt.className = 'txt';
+        txt.textContent = t || '';
+
+        row.appendChild(ln);
+        row.appendChild(txt);
+
+        if (flaggedLines.has(n)) {
+          row.style.cursor = 'pointer';
+          row.addEventListener('click', () => focusLine(n));
+        }
+        frag.appendChild(row);
+      });
+      docPane.appendChild(frag);
+
+      // Default: first flagged line (or line 1)
+      const firstFlagged = [...flaggedLines].sort((a,b) => a-b)[0];
+      if (firstFlagged) {
+        focusLine(firstFlagged);
+      } else {
+        focusLine(1);
+      }
+
+      commentStatsEl.textContent = `${totalFindings} total`;
+    }
+
+    function focusLine(lineNo) {
+      activeLine = lineNo;
+
+      // Clear active
+      docPane.querySelectorAll('.line.active').forEach(el => el.classList.remove('active'));
+
+      const row = docPane.querySelector(`.line[data-line="${lineNo}"]`);
+      if (row) {
+        row.classList.add('active');
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
+      renderCommentsForLine(lineNo);
+    }
+
+    function renderCommentsForLine(lineNo) {
+      const byLine = (previewData && previewData.findings_by_line) ? previewData.findings_by_line : {};
+      const items = byLine[String(lineNo)] || [];
+      commentsPane.innerHTML = '';
+
+      commentStatsEl.textContent = items.length ? `${items.length} on line ${lineNo}` : `0 on line ${lineNo}`;
+
+      if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'small';
+        empty.style.padding = '10px';
+        empty.textContent = 'No comments for this line. Click an orange-highlighted line to see comments.';
+        commentsPane.appendChild(empty);
+        return;
+      }
+
+      const frag = document.createDocumentFragment();
+      items.forEach(f => {
+        const card = document.createElement('div');
+        card.className = 'comment';
+
+        const top = document.createElement('div');
+        top.className = 'top';
+
+        const pill = document.createElement('div');
+        pill.className = 'pill';
+        const sev = (f.severity || '').toLowerCase();
+        const sevClass = sev ? `sev-${sev}` : '';
+        pill.innerHTML = `<strong>${f.error_type}</strong> · <span class="${sevClass}">${f.severity || ''}</span> · line ${f.line_number}`;
+
+        const jump = document.createElement('button');
+        jump.type = 'button';
+        jump.textContent = 'Jump';
+        jump.addEventListener('click', () => focusLine(Number(f.line_number)));
+
+        top.appendChild(pill);
+        top.appendChild(jump);
+
+        const body = document.createElement('div');
+        body.className = 'body';
+        body.textContent = f.source_reference ? f.source_reference : f.description;
+
+        card.appendChild(top);
+        card.appendChild(body);
+
+        if (f.description && f.source_reference) {
+          const src = document.createElement('div');
+          src.className = 'src';
+          src.textContent = 'BRD text: ' + f.description;
+          card.appendChild(src);
+        }
+
+        frag.appendChild(card);
+      });
+      commentsPane.appendChild(frag);
     }
 
     runBtn.addEventListener('click', runAnalysis);

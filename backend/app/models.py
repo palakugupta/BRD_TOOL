@@ -43,7 +43,7 @@ def insert_document(doc_type: str, filename: str, full_text: str) -> Tuple[int, 
 # CHUNKS
 # ─────────────────────────────────────────────
 
-def create_brd_chunks(doc_id: int, full_text: str, chunk_size: int = 50) -> int:
+def create_brd_chunks(doc_id: int, full_text: str, chunk_chars: int = 500) -> int:
 
     lines = full_text.splitlines()
     total_lines = len(lines)
@@ -55,15 +55,18 @@ def create_brd_chunks(doc_id: int, full_text: str, chunk_size: int = 50) -> int:
     cur = conn.cursor()
 
     chunk_count = 0
-    start = 0
+    i = 0
 
-    while start < total_lines:
-
-        end = min(start + chunk_size, total_lines)
-        chunk_lines = lines[start:end]
-        start_line = start + 1
-        end_line = end
-        chunk_text = "\n".join(chunk_lines)
+    while i < total_lines:
+        start_line = i + 1
+        buf: List[str] = []
+        size = 0
+        while i < total_lines and (size == 0 or size + len(lines[i]) + 1 <= chunk_chars):
+            buf.append(lines[i])
+            size += len(lines[i]) + 1
+            i += 1
+        end_line = i
+        chunk_text = "\n".join(buf)
 
         cur.execute(
             """
@@ -74,7 +77,6 @@ def create_brd_chunks(doc_id: int, full_text: str, chunk_size: int = 50) -> int:
         )
 
         chunk_count += 1
-        start = end
 
     conn.commit()
     conn.close()

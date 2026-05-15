@@ -1,10 +1,12 @@
 """
+llm_business_context.py
 LLM-backed detector that reviews the BRD against SOW/MoM using business context.
-Optional: if no LLM key is configured, this will no-op.
+
+This detector is optional: if no LLM is configured it will safely no-op.
 """
 
-from typing import List, Dict, Any, Optional
 import json
+from typing import List, Dict, Any, Optional
 
 from ..models import insert_finding
 from ..llm_client import analyze_business_context, is_llm_configured, LLMUnavailable
@@ -15,6 +17,7 @@ def _find_chunk_for_line(
     chunks: List[Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
     if line_number is None:
+        # Fallback: attach to first chunk, if any
         return chunks[0] if chunks else None
     for ch in chunks:
         if ch["start_line"] <= line_number <= ch["end_line"]:
@@ -29,21 +32,38 @@ def detect(
     chunks: List[Dict[str, Any]],
     project_model: Optional[Dict[str, Any]] = None,
 ) -> None:
-    if not is_llm_configured():
-        return
-    if not brd_text.strip():
+    """
+    Run LLM-based business-context checks and store additional findings.
+
+    The goal is to capture higher-level risks (scope drift, KPI/SLA mismatches,
+    process inconsistencies, domain misuse) that are difficult to encode as
+    static rules. If a project_model is provided, a compact JSON summary of
+    SOW/MoM is prepended to the SOW text so the LLM has explicit grounding.
+    """
+    print(
+        f"[llm_business_context] START — sow_len={len(sow_text)} "
+        f"mom_len={len(mom_text)} brd_len={len(brd_text)} chunks={len(chunks)}"
+    )
+
+    configured = is_llm_configured()
+    print(f"[llm_business_context] is_llm_configured = {configured}")
+
+    if not configured:
+        print("[llm_business_context] END (no LLM configured)")
         return
 
-    # If a project_model is provided, inject it into the prompt by
-    # prepending a compact JSON description to the SOW/MoM text so the
-    # LLM has an explicit, structured mental model to work from.
+    if not brd_text.strip():
+        print("[llm_business_context] END (empty BRD)")
+        return
+
     sow_for_llm = sow_text or ""
     mom_for_llm = mom_text or ""
 
     if project_model:
         try:
             model_json = json.dumps(project_model, ensure_ascii=False)
-        except Exception:
+        except Exception as e:
+            print(f"[llm_business_context] project_model serialize failed: {e}")
             model_json = "{}"
 
         prefix = (
@@ -53,6 +73,7 @@ def detect(
         )
         sow_for_llm = prefix + sow_for_llm
 
+    print("[llm_business_context] calling analyze_business_context()...")
     try:
         issues = analyze_business_context(
             sow_text=sow_for_llm,
@@ -60,10 +81,18 @@ def detect(
             brd_text=brd_text or "",
             max_issues=16,
         )
-    except LLMUnavailable:
+    except LLMUnavailable as e:
+        print("LLM unavailable:", e)
+        print("[llm_business_context] END (LLMUnavailable)")
         return
-    except Exception:
+    except Exception as e:
+        import traceback
+        print("LLM context detector crashed:", e)
+        traceback.print_exc()
+        print("[llm_business_context] END (exception)")
         return
+
+    print(f"[llm_business_context] got {len(issues)} issues from LLM")
 
     severity_map = {
         "critical": "critical",
@@ -75,7 +104,10 @@ def detect(
         line_no = issue.get("line_number")
         try:
             line_int = int(line_no) if line_no is not None else None
-        except Exception:
+        except Exception as e:
+            import traceback
+            print(f"LLM context: failed to parse line_number={line_no!r}: {e}")
+            traceback.print_exc()
             line_int = None
 
         ch = _find_chunk_for_line(line_int, chunks)
@@ -101,3 +133,4 @@ def detect(
             source_reference=source_reference[:400],
         )
 
+    print("[llm_business_context] END")
